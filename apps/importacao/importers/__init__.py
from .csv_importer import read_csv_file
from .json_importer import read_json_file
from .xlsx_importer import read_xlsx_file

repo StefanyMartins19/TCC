@@ -1,0 +1,251 @@
+from __future__ import annotations
+
+import json
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from typing import Any, Iterable
+
+import pandas as pd
+from django.db import transaction
+from django.utils import timezone
+
+from fontes.models import FonteDados
+from importacao.models import ErroImportacao, ImportacaoDados
+from indicadores.models import Indicador, Periodo, ValorIndicador
+from localidades.models import Localidade
+
+
+DEFAULT_REQUIRED_COLUMNS = {
+    'indicador',
+    'valor',
+    'ano',
+    'codigo_ibge',
+    'nome',
+    'uf',
+}
+
+
+def _normalizar_colunas(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = [str(col).strip().lower().replace(' ', '_') for col in df.columns]
+    aliases = {
+        'valor_indicador': 'valor',
+        'valor_medida': 'valor',
+        'localidade': 'nome',
+        'municipio': 'nome',
+        'codigo_ibge_localidade': 'codigo_ibge',
+        'codigo_uf': 'uf',
+        'regiao_uf': 'regiao',
+    }
+    df.rename(columns=aliases, inplace=True)
+    return df
+
+
+def _read_from_file(arquivo: Any, nome_arquivo: str) -> pd.DataFrame:
+    if hasattr(arquivo, 'read'):
+        try:
+            payload = arquivo.read()
+        except TypeError:
+            payload = arquivo.read()
+        if isinstance(payload, (bytes, bytearray)):
+            arquivo = payload
+    if isinstance(arquivo, (bytes, bytearray)):
+        if nome_arquivo.lower().endswith('.csv'):
+            return pd.read_csv(Path('/tmp') / nome_arquivo, storage_options={'bytes': arquivo})
+        if nome_arquivo.lower().endswith('.xlsx'):
+            return pd.read_excel(pd.io.common.BytesIO(arquivo))
+        if nome_arquivo.lower().endswith('.json'):
+            return pd.DataFrame(json.loads(arquivo.decode('utf-8')))
+    if isinstance(arquivo, str):
+        path = Path(arquivo)
+        if path.suffix.lower() == '.csv':
+            return pd.read_csv(path)
+        if path.suffix.lower() in {'.xlsx', '.xls'}:
+            return pd.read_excel(path)
+        if path.suffix.lower() == '.json':
+            with path.open('r', encoding='utf-8') as fp:
+                return pd.DataFrame(json.load(fp))
+    if isinstance(arquivo, Path):
+        return _read_from_file(str(arquivo), arquivo.name)
+    raise ValueError('Formato de arquivo não suportado. Use CSV, XLSX ou JSON.')
+
+
+def _normalizar_periodo(linha: dict[str, Any]) -> tuple[int, int | None, int | None, str]:
+    ano = linha.get('ano') or linha.get('ano_referencia')
+    mes = linha.get('mes')
+    trimestre = linha.get('trimestre')
+    if ano in (None, ''):
+        raise ValueError('campo ano obrigatório')
+
+    ano_int = int(ano)
+    mes_int = None
+    trimestre_int = None
+
+    if mes not in (None, ''):
+        mes_int = int(mes)
+        if not 1 <= mes_int <= 12:
+            raise ValueError(f'mês inválido: {mes}')
+        data_referencia = f'{ano_int}-{mes_int:02d}-01'
+    elif trimestre not in (None, ''):
+        trimestre_int = int(trimestre)
+        if not 1 <= trimestre_int <= 4:
+            raise ValueError(f'trimestre inválido: {trimestre}')
+        data_referencia = f'{ano_int}-{(trimestre_int * 3) - 2:02d}-01'
+    else:
+        data_referencia = f'{ano_int}-01-01'
+
+    return ano_int, mes_int, trimestre_int, data_referencia
+
+
+def _normalizar_localidade(linha: dict[str, Any]) -> tuple[str, str, str, str]:
+    nome = str(linha.get('nome') or linha.get('localidade') or '').strip()
+    codigo_ibge = str(linha.get('codigo_ibge') or linha.get('codigo') or '').strip()
+    uf = str(linha.get('uf') or '').strip().upper()
+    regiao = str(linha.get('regiao') or '').strip()
+    if not nome:
+        raise ValueError('campo nome/localidade obrigatório')
+    if not codigo_ibge:
+        codigo_ibge = ''
+    return nome, codigo_ibge, uf, regiao
+
+
+def _normalizar_valor(valor: Any) -> Decimal:
+    if valor in (None, '', pd.NA):
+        raise ValueError('valor obrigatório')
+    if isinstance(valor, Decimal):
+        return valor
+    texto = str(valor).strip().replace('.', '').replace(',', '.')
+    try:
+        return Decimal(texto)
+    except InvalidOperation as exc:
+        raise ValueError(f'valor inválido: {valor}') from exc
+
+
+def _build_normalized_row(linha: dict[str, Any]) -> dict[str, Any]:
+    nome, codigo_ibge, uf, regiao = _normalizar_localidade(linha)
+    ano, mes, trimestre, data_referencia = _normalizar_periodo(linha)
+    indicador = str(linha.get('indicador') or linha.get('nome_indicador') or '').strip()
+    if not indicador:
+        raise ValueError('campo indicador obrigatório')
+    categoria = str(linha.get('categoria') or 'outros').strip() or 'outros'
+    unidade = str(linha.get('unidade_medida') or linha.get('unidade') or 'sem unidade').strip() or 'sem unidade'
+    return {
+        'indicador': indicador,
+        'categoria': categoria,
+        'unidade_medida': unidade,
+        'valor': _normalizar_valor(linha.get('valor')),
+        'ano': ano,
+        'mes': mes,
+        'trimestre': trimestre,
+        'data_referencia': data_referencia,
+        'nome_localidade': nome,
+        'codigo_ibge': codigo_ibge,
+        'uf': uf,
+        'regiao': regiao,
+    }
+
+
+@transaction.atomic
+def processar_arquivo(fonte: FonteDados | int, arquivo: Any, *, required_columns: Iterable[str] | None = None) -> ImportacaoDados:
+    if isinstance(fonte, int):
+        fonte = FonteDados.objects.get(pk=fonte)
+    if fonte is None:
+        raise ValueError('Fonte de dados não informada.')
+
+    nome_arquivo = getattr(arquivo, 'name', 'arquivo_importado')
+    df = _read_from_file(arquivo, str(nome_arquivo))
+    df = _normalizar_colunas(df)
+
+    required = set(required_columns or DEFAULT_REQUIRED_COLUMNS)
+    colunas_faltantes = sorted(required - set(df.columns))
+    if colunas_faltantes:
+        raise ValueError(f'Colunas obrigatórias ausentes: {', '.join(colunas_faltantes)}')
+
+    importacao = ImportacaoDados.objects.create(
+        fonte=fonte,
+        arquivo=getattr(arquivo, 'name', None),
+        status='PROCESSANDO',
+        data_inicio=timezone.now(),
+    )
+
+    quantidade_lida = 0
+    quantidade_importada = 0
+    quantidade_rejeitada = 0
+
+    for index, linha in df.iterrows():
+        quantidade_lida += 1
+        linha_dict = linha.to_dict()
+        try:
+            registro = _build_normalized_row(linha_dict)
+            indicador_obj, _ = Indicador.objects.get_or_create(
+                nome=registro['indicador'],
+                defaults={
+                    'categoria': registro['categoria'],
+                    'unidade_medida': registro['unidade_medida'],
+                    'periodicidade': 'mensal' if registro['mes'] else 'trimestral' if registro['trimestre'] else 'anual',
+                    'ativo': True,
+                },
+            )
+
+            localidade_obj, _ = Localidade.objects.get_or_create(
+                codigo_ibge=registro['codigo_ibge'] or '',
+                nome=registro['nome_localidade'],
+                defaults={
+                    'tipo': 'Estado' if registro['uf'] else 'Região',
+                    'uf': registro['uf'],
+                    'regiao': registro['regiao'],
+                    'pais': 'Brasil',
+                },
+            )
+
+            periodo_obj, _ = Periodo.objects.get_or_create(
+                ano=registro['ano'],
+                mes=registro['mes'],
+                trimestre=registro['trimestre'],
+                defaults={'data_referencia': registro['data_referencia']},
+            )
+
+            if not periodo_obj.data_referencia:
+                periodo_obj.data_referencia = registro['data_referencia']
+                periodo_obj.save(update_fields=['data_referencia'])
+
+            ValorIndicador.objects.get_or_create(
+                indicador=indicador_obj,
+                fonte=fonte,
+                localidade=localidade_obj,
+                periodo=periodo_obj,
+                defaults={
+                    'valor': registro['valor'],
+                    'unidade_original': registro['unidade_medida'],
+                    'observacao': f'Importado automaticamente via ETL em {timezone.now().date()}',
+                    'metadados': {'arquivo_origem': nome_arquivo, 'fonte': fonte.nome},
+                },
+            )
+            quantidade_importada += 1
+        except Exception as exc:  # noqa: BLE001
+            quantidade_rejeitada += 1
+            ErroImportacao.objects.create(
+                importacao=importacao,
+                linha=index + 2,
+                campo='linha',
+                valor_original=str(linha_dict),
+                motivo=str(exc),
+            )
+
+    importacao.quantidade_lida = quantidade_lida
+    importacao.quantidade_importada = quantidade_importada
+    importacao.quantidade_rejeitada = quantidade_rejeitada
+    importacao.data_fim = timezone.now()
+    importacao.mensagem_erro = ''
+
+    if quantidade_rejeitada and quantidade_importada == 0:
+        importacao.status = 'ERRO'
+        importacao.mensagem_erro = 'Nenhum registro válido foi importado. Consulte os erros de importação.'
+    elif quantidade_rejeitada:
+        importacao.status = 'CONCLUIDO'
+        importacao.mensagem_erro = f'{quantidade_rejeitada} registros foram rejeitados e registrados em ErroImportacao.'
+    else:
+        importacao.status = 'CONCLUIDO'
+
+    importacao.save()
+    return importacao

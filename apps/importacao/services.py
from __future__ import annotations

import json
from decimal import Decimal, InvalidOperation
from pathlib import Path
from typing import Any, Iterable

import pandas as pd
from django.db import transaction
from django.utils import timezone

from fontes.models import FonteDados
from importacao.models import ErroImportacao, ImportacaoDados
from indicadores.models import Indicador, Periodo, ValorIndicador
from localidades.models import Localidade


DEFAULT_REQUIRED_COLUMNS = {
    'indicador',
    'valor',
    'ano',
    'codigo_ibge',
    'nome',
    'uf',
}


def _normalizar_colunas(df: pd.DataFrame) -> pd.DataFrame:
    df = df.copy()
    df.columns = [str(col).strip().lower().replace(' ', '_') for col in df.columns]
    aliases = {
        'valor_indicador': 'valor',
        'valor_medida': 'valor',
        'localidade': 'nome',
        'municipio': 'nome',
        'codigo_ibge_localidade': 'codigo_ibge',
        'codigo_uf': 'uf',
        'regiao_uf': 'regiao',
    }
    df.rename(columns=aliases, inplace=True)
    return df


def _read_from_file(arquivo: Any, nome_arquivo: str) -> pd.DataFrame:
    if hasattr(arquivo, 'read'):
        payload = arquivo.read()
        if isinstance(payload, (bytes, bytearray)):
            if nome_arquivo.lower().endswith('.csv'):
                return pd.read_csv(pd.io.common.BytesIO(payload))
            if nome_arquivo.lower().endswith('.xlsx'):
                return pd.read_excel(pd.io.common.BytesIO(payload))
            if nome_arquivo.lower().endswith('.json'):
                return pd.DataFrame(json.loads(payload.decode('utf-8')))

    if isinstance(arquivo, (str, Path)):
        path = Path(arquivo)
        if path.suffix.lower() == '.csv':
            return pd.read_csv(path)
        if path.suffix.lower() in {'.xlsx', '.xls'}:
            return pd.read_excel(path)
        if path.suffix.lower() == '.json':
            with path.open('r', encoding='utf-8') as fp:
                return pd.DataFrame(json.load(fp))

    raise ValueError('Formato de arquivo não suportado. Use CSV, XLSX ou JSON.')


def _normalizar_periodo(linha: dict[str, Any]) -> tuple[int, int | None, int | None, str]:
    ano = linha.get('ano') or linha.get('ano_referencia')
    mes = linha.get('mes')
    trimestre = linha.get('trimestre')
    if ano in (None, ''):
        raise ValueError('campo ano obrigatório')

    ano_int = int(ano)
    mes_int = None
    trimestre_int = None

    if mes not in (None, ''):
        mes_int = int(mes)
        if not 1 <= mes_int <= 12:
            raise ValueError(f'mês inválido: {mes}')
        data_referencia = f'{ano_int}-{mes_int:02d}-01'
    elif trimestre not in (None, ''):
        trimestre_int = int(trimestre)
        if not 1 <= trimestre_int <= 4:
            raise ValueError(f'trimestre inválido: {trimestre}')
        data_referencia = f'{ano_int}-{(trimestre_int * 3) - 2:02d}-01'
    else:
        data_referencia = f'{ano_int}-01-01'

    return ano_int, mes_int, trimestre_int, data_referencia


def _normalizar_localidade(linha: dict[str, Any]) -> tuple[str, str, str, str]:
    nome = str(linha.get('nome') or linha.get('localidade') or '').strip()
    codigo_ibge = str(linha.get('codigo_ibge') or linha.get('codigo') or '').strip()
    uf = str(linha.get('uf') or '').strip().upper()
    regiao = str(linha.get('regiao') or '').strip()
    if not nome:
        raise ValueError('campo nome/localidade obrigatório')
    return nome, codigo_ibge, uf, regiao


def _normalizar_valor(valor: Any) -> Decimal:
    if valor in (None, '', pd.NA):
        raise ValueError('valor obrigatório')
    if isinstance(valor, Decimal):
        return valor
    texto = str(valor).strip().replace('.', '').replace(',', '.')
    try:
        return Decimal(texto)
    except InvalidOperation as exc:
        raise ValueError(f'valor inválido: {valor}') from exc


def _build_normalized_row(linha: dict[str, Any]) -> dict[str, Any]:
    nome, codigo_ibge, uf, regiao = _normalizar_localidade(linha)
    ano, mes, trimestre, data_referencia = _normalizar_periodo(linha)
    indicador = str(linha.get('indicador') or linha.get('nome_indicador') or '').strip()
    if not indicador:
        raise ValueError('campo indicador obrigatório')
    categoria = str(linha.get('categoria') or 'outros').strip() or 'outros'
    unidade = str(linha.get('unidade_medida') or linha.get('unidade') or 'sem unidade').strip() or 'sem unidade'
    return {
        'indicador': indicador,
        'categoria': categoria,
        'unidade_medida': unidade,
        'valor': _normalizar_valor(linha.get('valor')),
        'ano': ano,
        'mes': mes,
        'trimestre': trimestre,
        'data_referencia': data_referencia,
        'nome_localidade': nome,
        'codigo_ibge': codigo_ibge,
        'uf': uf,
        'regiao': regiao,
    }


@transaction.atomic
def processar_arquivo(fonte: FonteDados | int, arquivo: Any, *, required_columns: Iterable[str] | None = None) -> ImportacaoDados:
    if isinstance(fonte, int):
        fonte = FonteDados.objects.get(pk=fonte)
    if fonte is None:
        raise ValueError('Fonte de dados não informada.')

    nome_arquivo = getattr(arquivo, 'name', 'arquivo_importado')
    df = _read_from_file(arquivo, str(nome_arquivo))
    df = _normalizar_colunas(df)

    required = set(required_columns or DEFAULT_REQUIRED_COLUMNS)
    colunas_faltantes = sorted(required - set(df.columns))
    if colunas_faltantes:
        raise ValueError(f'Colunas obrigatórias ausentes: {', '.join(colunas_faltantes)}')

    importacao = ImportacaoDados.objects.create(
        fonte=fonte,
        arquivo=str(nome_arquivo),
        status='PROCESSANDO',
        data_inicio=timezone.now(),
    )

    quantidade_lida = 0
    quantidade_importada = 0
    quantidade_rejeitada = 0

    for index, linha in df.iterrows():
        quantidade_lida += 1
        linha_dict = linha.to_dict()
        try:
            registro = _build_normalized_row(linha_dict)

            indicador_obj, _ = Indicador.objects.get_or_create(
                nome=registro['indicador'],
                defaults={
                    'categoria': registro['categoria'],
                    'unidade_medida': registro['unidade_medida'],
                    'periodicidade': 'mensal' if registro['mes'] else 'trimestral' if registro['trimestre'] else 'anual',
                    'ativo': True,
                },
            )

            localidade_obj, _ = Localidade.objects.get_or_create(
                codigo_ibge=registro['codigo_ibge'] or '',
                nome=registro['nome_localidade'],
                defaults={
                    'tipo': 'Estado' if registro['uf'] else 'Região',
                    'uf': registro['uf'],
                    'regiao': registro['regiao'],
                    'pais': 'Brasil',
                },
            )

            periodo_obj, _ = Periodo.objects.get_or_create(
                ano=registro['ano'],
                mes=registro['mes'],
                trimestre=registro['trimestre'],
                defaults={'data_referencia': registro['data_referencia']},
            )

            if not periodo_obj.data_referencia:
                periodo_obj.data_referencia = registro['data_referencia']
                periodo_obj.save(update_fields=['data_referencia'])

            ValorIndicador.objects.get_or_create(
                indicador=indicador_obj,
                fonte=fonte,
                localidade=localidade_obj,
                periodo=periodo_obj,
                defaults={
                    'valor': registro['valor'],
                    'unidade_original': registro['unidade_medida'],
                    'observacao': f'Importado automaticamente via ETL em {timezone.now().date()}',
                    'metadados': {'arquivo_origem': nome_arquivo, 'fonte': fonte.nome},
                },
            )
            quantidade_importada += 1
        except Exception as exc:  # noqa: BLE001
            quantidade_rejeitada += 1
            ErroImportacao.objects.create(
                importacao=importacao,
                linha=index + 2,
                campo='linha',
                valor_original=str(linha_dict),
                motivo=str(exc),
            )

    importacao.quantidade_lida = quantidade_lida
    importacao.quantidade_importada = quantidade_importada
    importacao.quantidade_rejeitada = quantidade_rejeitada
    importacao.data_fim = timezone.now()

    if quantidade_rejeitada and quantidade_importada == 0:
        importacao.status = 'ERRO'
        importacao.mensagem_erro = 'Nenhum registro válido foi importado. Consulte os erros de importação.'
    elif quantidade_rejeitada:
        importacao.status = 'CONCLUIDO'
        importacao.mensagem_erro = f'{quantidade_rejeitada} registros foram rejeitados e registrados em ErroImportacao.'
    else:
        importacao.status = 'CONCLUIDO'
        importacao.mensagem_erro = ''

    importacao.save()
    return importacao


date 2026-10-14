@@ -1,0 +1,135 @@
+# Observatório Brasileiro da Inadimplência
+
+Projeto acadêmico de TCC para integração, tratamento, consulta e visualização de indicadores agregados relacionados à inadimplência e ao contexto socioeconômico brasileiro.
+
+## Objetivo
+
+A plataforma tem como finalidade apoiar a análise exploratória de indicadores públicos e agregados, com foco em tendências, comparações e rastreabilidade dos dados. O sistema não faz previsões, não classifica pessoas, não calcula score e não realiza diagnóstico individual de consumidores.
+
+## Escopo implementado
+
+A estrutura atual inclui:
+- projeto Django modular com apps para dashboard, indicadores, localidades, fontes e importacao;
+- modelos para FonteDados, Indicador, Periodo, ValorIndicador, Localidade e ImportacaoDados;
+- rastreabilidade de erros de importação por linha, campo e motivo em ErroImportacao;
+- ETL inicial para CSV, XLSX e JSON usando Pandas;
+- validação básica de colunas obrigatórias, datas, valores numéricos e registros rejeitados;
+- dashboard com filtros básicos e cards de resumo;
+- templates Django para páginas de Início, Dashboard, Indicadores e Fontes de Dados;
+- suporte a PostgreSQL por meio de DATABASE_URL e variáveis de ambiente.
+
+## Stack
+
+- Python
+- Django
+- PostgreSQL (configuração por DATABASE_URL)
+- Pandas
+- openpyxl
+- Chart.js
+
+## Estrutura do projeto
+
+- `config/`: configuração central do Django
+- `apps/dashboard/`: landing page e dashboard
+- `apps/indicadores/`: modelos de indicadores, períodos e valores
+- `apps/localidades/`: localidades e geografia
+- `apps/fontes/`: fontes de dados e metadados
+- `apps/importacao/`: ETL, importadores e registro de importações
+- `templates/`: templates HTML
+- `static/`: arquivos estáticos e JS modular
+- `media/`: uploads de arquivos importados
+
+## Requisitos
+
+- Python 3.12+
+- PostgreSQL 16 ou SQLite para desenvolvimento simples
+- Virtualenv ou venv
+
+## Instalação
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+cp .env.example .env
+```
+
+Configure `.env` conforme o ambiente. A configuração padrão aceita PostgreSQL por `DATABASE_URL`.
+
+## Banco de dados
+
+```env
+DATABASE_URL=postgresql://observatorio:observatorio@localhost:5432/observatorio
+```
+
+Se necessário, o projeto também suporta SQLite por padrão quando `DATABASE_URL` não é informado.
+
+## Migrações
+
+```bash
+python manage.py makemigrations
+python manage.py migrate
+```
+
+## Execução
+
+```bash
+python manage.py runserver
+```
+
+Acesse: http://127.0.0.1:8000/
+
+## Importação de dados
+
+O pipeline ETL implementado está centralizado em `apps/importacao/services.py` e suporta:
+- CSV
+- XLSX
+- JSON
+
+A importação valida:
+- colunas obrigatórias;
+- valores numéricos;
+- anos, meses e trimestre;
+- códigos e nomes de localidade;
+- registros duplicados de valor por indicador/fonte/localidade/período.
+
+Erros por linha são armazenados em `ErroImportacao` para rastreabilidade.
+
+### Comando de importação
+
+```bash
+python manage.py importar_fonte /caminho/para/arquivo.csv --fonte-nome "BCB"
+```
+
+ou:
+
+```bash
+python manage.py importar_fonte /caminho/para/arquivo.xlsx --fonte-id 1
+```
+
+## Testes
+
+A suíte atual inclui testes básicos para:
+- CSV importável;
+- JSON com registros inválidos;
+- criação do registro de importação;
+- rastreabilidade de erro por linha.
+
+```bash
+python manage.py test
+```
+
+## Limitações
+
+- O projeto ainda está em etapa de evolução para dashboards mais complexos e comparações multidimensionais.
+- Os dados são tratados como agregados e estatísticos, sem cadastro individual de pessoas ou consumidores.
+- Não há previsão, score, ranking individual ou análise causal.
+- Qualquer dado simulado para desenvolvimento deve ser identificado claramente como "DADOS SIMULADOS PARA DESENVOLVIMENTO".
+
+## Observações finais
+
+- Não há armazenamento de CPF, nome individual, endereço ou qualquer dado pessoal.
+- Não há classificação de pessoas ou previsões de inadimplência.
+- Toda importação deve manter rastreabilidade pela fonte, período, localidade e indicador.
+

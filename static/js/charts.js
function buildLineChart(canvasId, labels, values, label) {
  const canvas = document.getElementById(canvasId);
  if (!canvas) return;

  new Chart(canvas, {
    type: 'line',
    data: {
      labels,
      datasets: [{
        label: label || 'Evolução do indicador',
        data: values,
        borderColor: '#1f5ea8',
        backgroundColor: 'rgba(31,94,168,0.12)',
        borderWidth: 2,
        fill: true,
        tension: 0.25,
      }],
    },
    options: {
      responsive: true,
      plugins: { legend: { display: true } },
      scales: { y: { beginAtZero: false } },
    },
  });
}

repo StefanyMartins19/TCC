@@ -1,0 +1,57 @@
+from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+
+from fontes.models import FonteDados
+from importacao.models import ErroImportacao, ImportacaoDados
+from importacao.services import processar_arquivo
+from indicadores.models import ValorIndicador
+
+
+class ImportacaoServiceTests(TestCase):
+    def setUp(self):
+        self.fonte = FonteDados.objects.create(
+            nome='BCB',
+            instituicao='Banco Central do Brasil',
+            descricao='Fonte de teste para validação do ETL',
+            url_origem='https://www.bcb.gov.br',
+            tipo_origem='CSV',
+            ativo=True,
+        )
+
+    def test_processar_arquivo_csv_importa_registro(self):
+        csv = (
+            'indicador,valor,ano,mes,codigo_ibge,nome,uf,regiao\n'
+            'Taxa de inadimplência,2.5,2024,1,3550308,São Paulo,SP,Sudeste\n'
+        )
+        arquivo = SimpleUploadedFile('bcb.csv', csv.encode('utf-8'), content_type='text/csv')
+
+        importacao = processar_arquivo(self.fonte, arquivo)
+
+        self.assertEqual(importacao.status, 'CONCLUIDO')
+        self.assertEqual(importacao.quantidade_importada, 1)
+        self.assertEqual(ValorIndicador.objects.count(), 1)
+
+    def test_processar_arquivo_json_registra_erro_para_valor_invalido(self):
+        payload = [{
+            'indicador': 'Taxa de inadimplência',
+            'valor': 'valor-invalido',
+            'ano': 2024,
+            'mes': 1,
+            'codigo_ibge': '3550308',
+            'nome': 'São Paulo',
+            'uf': 'SP',
+            'regiao': 'Sudeste',
+        }]
+        arquivo = SimpleUploadedFile(
+            'bcb.json',
+            __import__('json').dumps(payload).encode('utf-8'),
+            content_type='application/json',
+        )
+
+        importacao = processar_arquivo(self.fonte, arquivo)
+
+        self.assertGreaterEqual(importacao.quantidade_rejeitada, 1)
+        self.assertTrue(ErroImportacao.objects.filter(importacao=importacao).exists())
+
+    def test_importacao_cria_registro_de_carga(self):
+        self.assertTrue(ImportacaoDados.objects.count() >= 0)

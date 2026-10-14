@@ -1,0 +1,9 @@
+from typing import Any
+
+import pandas as pd
+
+
+def read_xlsx_file(arquivo: Any) -> pd.DataFrame:
+    if hasattr(arquivo, 'read'):
+        return pd.read_excel(arquivo)
+    return pd.read_excel(arquivo)

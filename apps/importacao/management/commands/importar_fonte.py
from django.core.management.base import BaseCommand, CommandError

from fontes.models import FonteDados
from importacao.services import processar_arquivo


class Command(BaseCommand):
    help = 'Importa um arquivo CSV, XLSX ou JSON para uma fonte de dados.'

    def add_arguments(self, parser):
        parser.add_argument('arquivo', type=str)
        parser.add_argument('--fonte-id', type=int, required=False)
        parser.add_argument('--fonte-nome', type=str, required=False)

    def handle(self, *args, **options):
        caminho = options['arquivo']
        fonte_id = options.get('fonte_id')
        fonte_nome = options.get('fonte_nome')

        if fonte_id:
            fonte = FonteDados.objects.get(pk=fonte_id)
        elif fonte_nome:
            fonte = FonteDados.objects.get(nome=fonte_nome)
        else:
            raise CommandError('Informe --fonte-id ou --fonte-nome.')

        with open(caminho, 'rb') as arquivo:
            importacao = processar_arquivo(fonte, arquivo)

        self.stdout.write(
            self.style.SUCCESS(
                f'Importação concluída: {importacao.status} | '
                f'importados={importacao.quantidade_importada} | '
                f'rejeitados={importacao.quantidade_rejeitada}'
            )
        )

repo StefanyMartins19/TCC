@@ -1,0 +1,16 @@
+import json
+from typing import Any
+
+import pandas as pd
+
+
+def read_json_file(arquivo: Any) -> pd.DataFrame:
+    if hasattr(arquivo, 'read'):
+        payload = arquivo.read()
+        if isinstance(payload, (bytes, bytearray)):
+            payload = payload.decode('utf-8')
+        data = json.loads(payload)
+    else:
+        with open(arquivo, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+    return pd.DataFrame(data)
