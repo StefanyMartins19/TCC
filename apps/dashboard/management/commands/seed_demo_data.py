@@ -87,7 +87,7 @@ class Command(BaseCommand):
             periodo, _ = Periodo.objects.get_or_create(
                 ano=ano,
                 mes=mes,
-                defaults={'trimestre': ((mes - 1) // 3) + 1, 'data_referencia': timezone.datetime(ano, mes, 1).date()}
+                defaults={'data_referencia': timezone.datetime(ano, mes, 1).date()}
             )
             periodos.append(periodo)
 

@@ -17,10 +17,21 @@ class Indicador(models.Model):
     ]
 
     nome = models.CharField(max_length=200)
+    nome_curto = models.CharField(max_length=120, blank=True)
     descricao = models.TextField(blank=True)
     categoria = models.CharField(max_length=40, choices=CATEGORIA_CHOICES, default='outros')
     unidade_medida = models.CharField(max_length=50)
     periodicidade = models.CharField(max_length=50, blank=True)
+    codigo_fonte = models.CharField(max_length=100, blank=True)
+    abrangencia = models.CharField(max_length=200, blank=True)
+    url_documentacao = models.URLField(blank=True)
+    fonte = models.ForeignKey(
+        FonteDados,
+        on_delete=models.PROTECT,
+        related_name='indicadores',
+        blank=True,
+        null=True,
+    )
     ativo = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -42,13 +53,43 @@ class Periodo(models.Model):
 
     class Meta:
         ordering = ['data_referencia']
-        unique_together = [('ano', 'mes'), ('ano', 'trimestre')]
         verbose_name = 'Período'
         verbose_name_plural = 'Períodos'
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(mes__isnull=True) | models.Q(trimestre__isnull=True),
+                name='periodo_mes_ou_trimestre',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(mes__isnull=True) | models.Q(mes__gte=1, mes__lte=12),
+                name='periodo_mes_valido',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(trimestre__isnull=True) | models.Q(trimestre__gte=1, trimestre__lte=4),
+                name='periodo_trimestre_valido',
+            ),
+            models.UniqueConstraint(
+                fields=['ano', 'mes'],
+                condition=models.Q(mes__isnull=False),
+                name='uniq_periodo_ano_mes',
+            ),
+            models.UniqueConstraint(
+                fields=['ano', 'trimestre'],
+                condition=models.Q(trimestre__isnull=False),
+                name='uniq_periodo_ano_trim',
+            ),
+            models.UniqueConstraint(
+                fields=['ano'],
+                condition=models.Q(mes__isnull=True, trimestre__isnull=True),
+                name='uniq_periodo_ano_anual',
+            ),
+        ]
 
     def __str__(self):
         if self.mes:
             return f'{self.ano}-{self.mes:02d}'
+        if self.trimestre:
+            return f'{self.ano}-T{self.trimestre}'
         return str(self.ano)
 
 
