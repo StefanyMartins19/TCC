@@ -2,6 +2,8 @@ import json
 from io import StringIO
 from unittest.mock import Mock, patch
 
+from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase
@@ -10,6 +12,100 @@ from django.urls import reverse
 from fontes.models import FonteDados
 from indicadores.models import Indicador, Periodo, ValorIndicador
 from localidades.models import Localidade
+from config.settings_helpers import (
+    database_config,
+    get_secret_key,
+    parse_allowed_hosts,
+    parse_origins,
+    validate_production_origins,
+)
+
+
+class ProductionSettingsTests(TestCase):
+    def test_local_defaults_keep_sqlite_and_static_files_configuration(self):
+        self.assertEqual(settings.DATABASES['default']['ENGINE'], 'django.db.backends.sqlite3')
+        self.assertIn('whitenoise.middleware.WhiteNoiseMiddleware', settings.MIDDLEWARE)
+        self.assertEqual(
+            settings.STORAGES['staticfiles']['BACKEND'],
+            'django.contrib.staticfiles.storage.StaticFilesStorage',
+        )
+        self.assertTrue(settings.STATIC_ROOT.name == 'staticfiles')
+
+    def test_postgres_url_decodes_credentials_and_requires_tls_in_production(self):
+        config = database_config(
+            'postgresql://user%40render:p%40ss@db.example.internal:5433/observatorio'
+            '?connect_timeout=10',
+            settings.BASE_DIR,
+            debug=False,
+        )
+
+        self.assertEqual(config['ENGINE'], 'django.db.backends.postgresql')
+        self.assertEqual(config['USER'], 'user@render')
+        self.assertEqual(config['PASSWORD'], 'p@ss')
+        self.assertEqual(config['PORT'], '5433')
+        self.assertEqual(config['OPTIONS'], {'sslmode': 'require', 'connect_timeout': '10'})
+
+    def test_postgres_url_respects_explicit_ssl_mode_and_sqlite_url(self):
+        postgres = database_config(
+            'postgres://user:secret@localhost/app?sslmode=verify-full'
+            '&sslrootcert=%2Fetc%2Fssl%2Froot.crt&sslcert=%2Fetc%2Fssl%2Fclient.crt',
+            settings.BASE_DIR,
+            debug=False,
+        )
+        sqlite = database_config('sqlite:///local.sqlite3', settings.BASE_DIR, debug=True)
+
+        self.assertEqual(
+            postgres['OPTIONS'],
+            {
+                'sslmode': 'verify-full',
+                'sslrootcert': '/etc/ssl/root.crt',
+                'sslcert': '/etc/ssl/client.crt',
+            },
+        )
+        self.assertEqual(sqlite['NAME'], str(settings.BASE_DIR / 'local.sqlite3'))
+        with self.assertRaises(ImproperlyConfigured):
+            database_config(
+                'postgres://user:secret@localhost/app?sslmode=prefer',
+                settings.BASE_DIR,
+                debug=False,
+            )
+        with self.assertRaises(ImproperlyConfigured):
+            database_config('sqlite:///production.sqlite3', settings.BASE_DIR, debug=False)
+        with self.assertRaises(ImproperlyConfigured):
+            database_config(
+                'postgres://user:secret@localhost/app?unknown_option=value',
+                settings.BASE_DIR,
+                debug=False,
+            )
+
+    def test_production_secret_and_origins_are_validated(self):
+        self.assertEqual(get_secret_key(None, debug=True), 'django-insecure-dev-key')
+        with self.assertRaises(ImproperlyConfigured):
+            get_secret_key(None, debug=False)
+        self.assertEqual(
+            get_secret_key('a-secure-production-secret', debug=False),
+            'a-secure-production-secret',
+        )
+        for placeholder in (
+            'django-insecure-custom-key',
+            'chave-apenas-para-desenvolvimento-local',
+            'troque-esta-chave-por-uma-segura',
+            'change-me',
+        ):
+            with self.subTest(placeholder=placeholder), self.assertRaises(ImproperlyConfigured):
+                get_secret_key(placeholder, debug=False)
+
+        hosts = parse_allowed_hosts('api.example.com,localhost')
+        self.assertEqual(hosts, ['api.example.com', 'localhost'])
+        with self.assertRaises(ImproperlyConfigured):
+            parse_allowed_hosts('*')
+
+        origins = parse_origins('https://app.example.com', 'CORS_ALLOWED_ORIGINS')
+        validate_production_origins(origins, debug=False)
+        with self.assertRaises(ImproperlyConfigured):
+            parse_origins('https://*.example.com', 'CORS_ALLOWED_ORIGINS')
+        with self.assertRaises(ImproperlyConfigured):
+            validate_production_origins(['http://app.example.com'], debug=False)
 
 
 class DashboardViewsTests(TestCase):
