@@ -42,6 +42,7 @@ import {
 } from "recharts";
 import type { Indicator, Locality, Observation, ObservationFilters } from "./api";
 import { useCatalog } from "./data";
+import { buildCsv } from "./csv.js";
 
 const nav = [
   { to: "/", label: "Início", icon: Home },
@@ -698,29 +699,17 @@ export function DataTable({ rows = [] }: { rows?: Observation[] }) {
   const visible = filtered.slice(page * 8, page * 8 + 8);
 
   function exportCsv() {
-    const fields = ["Indicador", "Valor", "Unidade", "Período", "Localidade", "Fonte", "Código"];
-    const escape = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
-    const csv = [
-      fields.map(escape).join(","),
-      ...filtered.map((row) =>
-        [
-          row.indicator,
-          row.value,
-          row.unit,
-          row.date,
-          row.locality,
-          row.source,
-          row.code,
-        ]
-          .map(escape)
-          .join(","),
-      ),
-    ].join("\r\n");
+    const csv = buildCsv(filtered);
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" }));
+    const url = URL.createObjectURL(
+      new Blob([csv], { type: "text/csv;charset=utf-8" }),
+    );
+    link.href = url;
     link.download = "observatorio-dados-oficiais.csv";
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(link.href);
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   return (
