@@ -103,3 +103,30 @@ Set-Location frontend
 npm run build
 npm run typecheck
 ```
+
+## Deploy do backend Django na Render
+
+Crie um **Web Service** apontando para a raiz deste repositório, com runtime Python. Configure os comandos:
+
+- **Build Command:** `pip install -r requirements.txt && python manage.py collectstatic --noinput`
+- **Pre-Deploy Command (quando disponível):** `python manage.py migrate`
+- **Start Command:** `gunicorn config.wsgi --bind 0.0.0.0:$PORT`
+
+`config.wsgi` exporta o callable `application`, usado por padrão pelo Gunicorn quando o `:callable` é omitido. Em planos sem comando Pre-Deploy, use como Start Command o fallback `python manage.py migrate && gunicorn config.wsgi --bind 0.0.0.0:$PORT`. Em produção com réplicas, prefira executar migrations uma vez no Pre-Deploy e mantenha o Start Command sem migrations para evitar corridas entre instâncias.
+
+Configure as variáveis no Web Service; não grave valores reais no repositório:
+
+```text
+DEBUG=False
+SECRET_KEY=<gerar um segredo forte e exclusivo>
+DATABASE_URL=<Internal Database URL do PostgreSQL Render>
+ALLOWED_HOSTS=<nome-do-servico>.onrender.com,api.seudominio.com
+CORS_ALLOWED_ORIGINS=https://seudominio.com,https://www.seudominio.com
+CSRF_TRUSTED_ORIGINS=https://seudominio.com,https://www.seudominio.com
+```
+
+`ALLOWED_HOSTS` recebe apenas hostnames, sem esquema, caminhos ou curingas; CORS e CSRF recebem origens completas, incluindo `https://`, sem caminhos ou curingas. Informe todos e somente os domínios autorizados do frontend. Em produção, origens HTTP são recusadas. A aplicação falha na inicialização com `DEBUG=False` se `SECRET_KEY` estiver ausente ou for um placeholder de desenvolvimento conhecido. A URL PostgreSQL decodifica credenciais percent-encoded e aceita somente os parâmetros `sslmode`, `sslrootcert`, `sslcert`, `sslkey`, `sslpassword`, `sslcrl`, `sslcrldir`, `connect_timeout` e `application_name`; parâmetros desconhecidos ou repetidos são recusados. Sem `sslmode` explícito, a conexão força TLS (`require`) em produção. `sslmode=disable` e `prefer` são recusados fora do modo de desenvolvimento. O proxy TLS da Render é reconhecido, redirecionamentos HTTPS, cookies seguros e HSTS são habilitados com `DEBUG=False`.
+
+WhiteNoise serve os arquivos de `collectstatic` usando armazenamento comprimido com manifesto. SQLite permanece o padrão local; defina `DATABASE_URL=sqlite:///db.sqlite3` para fixá-lo. `DATABASE_URL` de produção deve apontar para o PostgreSQL provisionado na Render.
+
+Para validar as opções de segurança no ambiente de deploy, execute `python manage.py check --deploy`. Warnings sobre `SECURE_HSTS_INCLUDE_SUBDOMAINS` e `SECURE_HSTS_PRELOAD` são mantidos deliberadamente até confirmar que todos os subdomínios relevantes usam HTTPS e que o domínio deve entrar na lista preload; habilite `SECURE_HSTS_INCLUDE_SUBDOMAINS=True` e `SECURE_HSTS_PRELOAD=True` somente após essa confirmação.
