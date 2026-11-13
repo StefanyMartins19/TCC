@@ -1,131 +1,105 @@
 # Observatório Brasileiro da Inadimplência
 
-Projeto acadêmico de TCC para integração, tratamento, consulta e visualização de indicadores relacionados à inadimplência e ao contexto socioeconômico brasileiro.
+Aplicação acadêmica para consultar e visualizar séries públicas e agregadas sobre crédito e contexto socioeconômico. Não analisa pessoas, não prevê inadimplência e não afirma causalidade.
 
-## Objetivo acadêmico
+## Estrutura
 
-A plataforma tem como finalidade apoiar a análise exploratória de indicadores agregados e públicos, com foco em tendências, comparações e rastreabilidade dos dados. Não há classificação individual de consumidores, não há previsão de inadimplência e não há afirmações de causalidade entre indicadores.
-
-## Arquitetura proposta
-
-A estrutura modular foi organizada para separar responsabilidades por domínio:
-
-- `config/`: configuração central do Django.
-- `apps/dashboard/`: landing page, dashboard e páginas públicas.
-- `apps/indicadores/`: indicadores, períodos e valores.
-- `apps/localidades/`: localidades e mapeamento territorial.
-- `apps/fontes/`: fontes de dados e rastreabilidade.
-- `apps/importacao/`: importação e registro de processamento de arquivos.
-- `templates/`: templates HTML do frontend público.
-- `static/`: CSS e recursos estáticos.
-- `media/`: uploads de arquivos de importação.
-
-## Stack
-
-- Python 3.14
-- Django 6.1
-- PostgreSQL (configuração recomendada)
-- Pandas e openpyxl para importação de arquivos
-- Chart.js no frontend
+- `apps/`: domínio Django de indicadores, localidades, fontes e importações.
+- `config/`: configurações, URLs da API e seleção do banco.
+- `frontend/`: aplicação React + TypeScript portada do protótipo Figma, preservando navegação e identidade visual.
+- `static/` e `templates/`: páginas Django existentes e recursos administrativos.
 
 ## Requisitos
 
-- Python 3.12+
-- PostgreSQL 16 (opcional para execução local via Docker)
-- Virtualenv ou venv
+- Python 3.12+ (o `requirements.txt` atual recomenda Python 3.14).
+- Node.js 20+ e npm.
+- PostgreSQL 16 opcional; SQLite é usado por padrão no desenvolvimento local.
 
-## Instalação local
+## Desenvolvimento local com SQLite
 
-1. Crie o ambiente virtual:
+No PowerShell, na raiz do repositório:
 
-   ```bash
-   py -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   ```
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+python manage.py migrate
+python manage.py seed_catalogo
+python manage.py runserver
+```
 
-2. Instale as dependências:
+Em outro terminal:
 
-   ```bash
-   python -m pip install --upgrade pip
-   python -m pip install -r requirements.txt
-   ```
+```powershell
+Set-Location frontend
+npm install
+npm run dev
+```
 
-3. Configure as variáveis de ambiente:
+Abra `http://127.0.0.1:5173/`. O proxy do Vite encaminha `/api/` para o Django em `http://127.0.0.1:8000`. Configure `VITE_API_BASE_URL` se a API estiver em outro host.
 
-   ```bash
-   copy .env.example .env
-   ```
+O SQLite local fica em `db.sqlite3` na raiz e está ignorado pelo Git. As migrations não apagam dados; a migration de `Periodo` interrompe com erro descritivo se encontrar períodos que combinam mês e trimestre ou outras referências duplicadas/ambíguas.
 
-4. Ajuste o arquivo `.env` conforme o ambiente.
+## PostgreSQL
 
-## Configuração do PostgreSQL
+Suba o serviço de banco:
 
-A configuração padrão do projeto usa PostgreSQL via `DATABASE_URL`. Exemplo:
+```powershell
+docker compose up -d db
+```
+
+No `.env` local, defina `DATABASE_URL` com a conexão do PostgreSQL, por exemplo:
 
 ```env
 DATABASE_URL=postgresql://observatorio:observatorio@localhost:5432/observatorio
 ```
 
-Se preferir, é possível subir o banco com Docker Compose:
+Não use credenciais reais no repositório. A mesma aplicação e as mesmas migrations suportam PostgreSQL e SQLite.
 
-```bash
-docker compose up -d db
+## Catálogo e séries oficiais
+
+Cadastre metadados e localidades sem criar observações:
+
+```powershell
+python manage.py seed_catalogo
 ```
 
-## Migrations
+Importe as séries mensais oficiais SGS 21084, 25462 e 29265 diretamente do BCData:
 
-```bash
-python manage.py migrate
+```powershell
+python manage.py importar_dados_bcb
 ```
 
-## Criação do superusuário
+Por padrão, a carga consulta de `2000-01-01` até a data atual. É possível limitar ou repetir o intervalo:
 
-```bash
-python manage.py createsuperuser
+```powershell
+python manage.py importar_dados_bcb --data-inicial 2024-01-01 --data-final 2026-11-12
 ```
 
-## Executando o projeto
+A importação valida o payload, datas, duplicatas, precisão e unidades; faz upsert idempotente por indicador/fonte/localidade/período; e registra contagens, falhas e proveniência em `ImportacaoDados` e `ErroImportacao`. Uma série que falha fica marcada como erro e a execução termina com falha, sem comunicar sucesso geral. As fontes IBGE, Serasa e CNC aparecem no catálogo, mas não têm observações até que uma integração oficial seja implementada. As séries SGS são nacionais; não são projetadas para UFs.
 
-```bash
-python manage.py runserver
+## API JSON
+
+- `GET /api/indicadores/` — catálogo, metadados, cobertura observada e referência mais recente.
+- `GET /api/fontes/` — fontes cadastradas, observações e última referência.
+- `GET /api/localidades/` — localidades do catálogo e disponibilidade observada.
+- `GET /api/observacoes/` — observações oficiais com metadados de fonte, indicador, período e localidade.
+
+Filtros de observações: `indicador` (repetível), `fonte`, `localidade`, `data_inicio` e `data_fim` (ISO `AAAA-MM-DD`). Exemplo:
+
+```text
+/api/observacoes/?indicador=1&fonte=1&localidade=1&data_inicio=2024-01-01&data_fim=2025-12-31
 ```
 
-Acesse: http://127.0.0.1:8000/
+O catálogo também aceita `q`, `categoria`, `fonte` e `periodicidade`. Observações marcadas como simuladas nunca são retornadas pela API.
 
-## Carregamento dos dados fictícios
+## Testes e build
 
-```bash
-python manage.py seed_demo_data
-```
-
-Esse comando cria dados simulados apenas para desenvolvimento e testes. A aplicação marca claramente essa condição no frontend e no README.
-
-## Execução dos testes
-
-```bash
+```powershell
+python manage.py check
 python manage.py test
+Set-Location frontend
+npm run build
+npm run typecheck
 ```
-
-## Estrutura das principais tabelas
-
-- `FonteDados`: fontes de dados e rastreabilidade.
-- `Indicador`: nome, categoria, unidade, periodicidade.
-- `Localidade`: Brasil, regiões, estados, municípios.
-- `Periodo`: ano, mês, trimestre e referência temporal.
-- `ValorIndicador`: fato principal do observatório, com FK para indicador, fonte, localidade e período.
-- `ImportacaoDados`: registro do processamento de arquivos importados.
-
-## Funcionamento da importação
-
-A estrutura de importação foi organizada para receber arquivos em CSV, XLSX e JSON, com etapas de leitura, validação, normalização e persistência. A aplicação já prevê extensões para futuros adaptadores de API.
-
-## Observações importantes
-
-- Não foram inventadas APIs ou endpoints de instituições.
-- Não há cadastro de pessoas físicas ou registros individuais.
-- Todos os dados de exemplo são simulados para desenvolvimento.
-- O Django Admin é usado apenas para administração técnica.
-
-### Mensagem exibida quando dados demo são usados
-
-DADOS SIMULADOS PARA DESENVOLVIMENTO.

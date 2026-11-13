@@ -1,0 +1,212 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", sans-serif;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    font-family: "Inter", sans-serif;
+    background: #f5f7fb;
+  }
+  button,
+  a,
+  select,
+  input {
+    outline: none;
+  }
+  button:focus-visible,
+  a:focus-visible,
+  select:focus-visible,
+  input:focus-visible {
+    box-shadow: 0 0 0 3px #93c5fd;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  th {
+    background: #f8fafc;
+    padding: 12px 16px;
+    text-align: left;
+    color: #64748b;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  td {
+    padding: 14px 16px;
+    border-top: 1px solid #f1f5f9;
+    color: #475569;
+    white-space: nowrap;
+  }
+}
+
+@layer components {
+  .sidebar {
+    @apply fixed inset-y-0 left-0 z-40 flex flex-col bg-[#101d35] transition-all duration-300;
+  }
+  .logo-mark {
+    @apply grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-950/30;
+  }
+  .nav-link {
+    @apply flex h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-medium text-slate-400 transition hover:bg-white/[.06] hover:text-white;
+  }
+  .nav-link.active {
+    @apply bg-blue-600 text-white shadow-lg shadow-blue-950/20;
+  }
+  .icon-btn {
+    @apply grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 hover:text-blue-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200;
+  }
+  .btn-lg {
+    @apply h-12 rounded-xl px-5 text-sm;
+  }
+  .btn-ghost-light {
+    @apply inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/[.06] px-5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/[.12];
+  }
+  .btn-page {
+    @apply rounded-md border border-slate-200 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10;
+  }
+  .card {
+    @apply rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_rgba(15,23,42,.03)] dark:border-white/10 dark:bg-[#0d192b];
+  }
+  .eyebrow {
+    @apply mb-2 text-[10px] font-bold uppercase tracking-[.16em] text-blue-600 dark:text-blue-400;
+  }
+  .page-title {
+    @apply text-2xl font-bold tracking-[-.025em] text-slate-900 dark:text-white sm:text-3xl;
+  }
+  .page-subtitle {
+    @apply mt-2 max-w-3xl text-sm leading-6 text-slate-500;
+  }
+  .field-label {
+    @apply mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500;
+  }
+  .field {
+    @apply h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-700 transition focus:border-blue-400 dark:border-white/10 dark:bg-white/5 dark:text-slate-200;
+  }
+  .dropdown-panel {
+    @apply absolute left-0 top-[68px] z-30 max-h-64 w-full min-w-64 overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-white/10 dark:bg-slate-900;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wide;
+  }
+  .badge.demo {
+    @apply bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300;
+  }
+  .badge.official {
+    @apply bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300;
+  }
+  .badge.pending {
+    @apply bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300;
+  }
+  .category {
+    @apply inline-flex w-fit rounded-md bg-blue-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-blue-700 dark:bg-blue-950/50 dark:text-blue-300;
+  }
+  .feature-icon {
+    @apply grid h-11 w-11 place-items-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-300;
+  }
+  .chart-frame {
+    @apply rounded-xl border border-slate-100 p-2 dark:border-white/10;
+  }
+  .method-note {
+    @apply mt-5 flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-[11px] leading-5 text-slate-500 dark:bg-white/5;
+  }
+  .segmented {
+    @apply flex rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-white/10 dark:bg-white/5;
+  }
+  .segmented button {
+    @apply flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium text-slate-500;
+  }
+  .segmented button.on {
+    @apply bg-white text-blue-700 shadow-sm dark:bg-slate-800 dark:text-blue-300;
+  }
+  .table-sub {
+    @apply mt-1 block text-[10px] font-normal text-slate-400;
+  }
+  .toast {
+    @apply fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-xs font-medium text-white shadow-xl;
+  }
+  .process-step {
+    @apply relative flex min-h-40 flex-col items-center justify-center border-b border-slate-100 p-5 text-center last:border-0 md:border-b-0 md:border-r dark:border-white/10;
+  }
+  .process-step > span {
+    @apply absolute right-3 top-3 text-4xl font-extrabold text-slate-100 dark:text-white/5;
+  }
+}
+
+.hero {
+  position: relative;
+  background:
+    radial-gradient(circle at 80% 10%, #1e4d9c 0, transparent 34%),
+    linear-gradient(135deg, #0b1629, #101d35 55%, #142a4f);
+}
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.18;
+  background-image:
+    linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: linear-gradient(to bottom, black, transparent 92%);
+}
+.hero-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #ffffff1f;
+  background: #ffffff0d;
+  color: #bfdbfe;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.hero i {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+.hero i:first-child {
+  background: #f87171;
+}
+.hero i:nth-child(2) {
+  background: #fbbf24;
+}
+.hero i:nth-child(3) {
+  background: #4ade80;
+}
+
+.dark th {
+  background: #ffffff08;
+  color: #94a3b8;
+}
+.dark td {
+  border-color: #ffffff0d;
+  color: #cbd5e1;
+}
+@media (max-width: 640px) {
+  .recharts-legend-wrapper {
+    display: none;
+  }
+  .process-step {
+    min-height: 120px;
+  }
+}
