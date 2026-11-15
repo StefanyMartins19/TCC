@@ -1,6 +1,7 @@
 from datetime import date
 
 from django.db.models import Count, F, Q
+from django.db.models.fields.json import KT
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
@@ -44,7 +45,7 @@ def _observacoes_oficiais():
             metadados__url_consulta__startswith='https://apisidra.ibge.gov.br/values/t/',
             metadados__codigo_tabela__isnull=False,
             metadados__codigo_variavel__isnull=False,
-            metadados__codigo_localidade=F('localidade__codigo_ibge'),
+            _codigo_localidade_metadados=F('localidade__codigo_ibge'),
             metadados__data_consulta__isnull=False,
             metadados__unidade_medida=unidade,
             metadados__periodicidade='trimestral',
@@ -65,7 +66,9 @@ def _observacoes_oficiais():
         localidade__tipo='Brasil',
         localidade__codigo_ibge='00',
     )
-    return ValorIndicador.objects.filter(metadados__simulado=False).filter(
+    return ValorIndicador.objects.alias(
+        _codigo_localidade_metadados=KT('metadados__codigo_localidade'),
+    ).filter(metadados__simulado=False).filter(
         (serie_bcb_nacional & series_bcb) | series_pnad_estaduais
     )
 
