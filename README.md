@@ -86,13 +86,13 @@ A importação valida o payload, datas, duplicatas, precisão e unidades; faz up
 - `GET /api/localidades/` — localidades do catálogo e disponibilidade observada.
 - `GET /api/observacoes/` — observações oficiais com metadados de fonte, indicador, período e localidade.
 
-Filtros de observações: `indicador` (repetível), `fonte`, `localidade`, `data_inicio` e `data_fim` (ISO `AAAA-MM-DD`). Exemplo:
+Filtros de observações: `indicador` (repetível), `fonte`, `localidade`, `uf` (sigla), `data_inicio` e `data_fim` (ISO `AAAA-MM-DD`). Exemplo:
 
 ```text
-/api/observacoes/?indicador=1&fonte=1&localidade=1&data_inicio=2024-01-01&data_fim=2025-12-31
+/api/observacoes/?indicador=1&fonte=1&uf=SP&data_inicio=2024-01-01&data_fim=2025-12-31
 ```
 
-O catálogo também aceita `q`, `categoria`, `fonte` e `periodicidade`. Observações marcadas como simuladas nunca são retornadas pela API.
+O catálogo também aceita `q`, `categoria`, `fonte` e `periodicidade`. A API só apresenta as séries BCB SGS atualmente importadas quando fonte, indicador, unidade, URLs de origem/consulta e abrangência nacional correspondem ao contrato do importador. `simulado=False`, isoladamente, não comprova autenticidade. Séries BCB continuam vinculadas à localidade Brasil; não são projetadas para UFs. A base OBI do PR externo não é importada porque sua procedência e conexão não podem ser verificadas neste repositório.
 
 ## Testes e build
 

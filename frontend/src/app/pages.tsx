@@ -583,6 +583,8 @@ export function TerritorialPage() {
   const [selected, setSelected] = useState<number | undefined>();
   const [region, setRegion] = useState("Todas");
   const [indicatorId, setIndicatorId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   useEffect(() => {
     if (!indicatorId && indicators.length) setIndicatorId(indicators[0].id);
   }, [indicatorId, indicators]);
@@ -591,8 +593,11 @@ export function TerritorialPage() {
     {
       indicatorIds: indicatorId ? [indicatorId] : [],
       localityId: selected === undefined ? "" : String(selected),
+      uf: selectedLocality?.uf || "",
+      startDate,
+      endDate,
     },
-    Boolean(indicatorId && selected !== undefined),
+    Boolean(indicatorId && selected !== undefined && (!startDate || !endDate || startDate <= endDate)),
   );
   const mapLocalities = states.filter((item) => region === "Todas" || item.region === region);
   const regions = ["Todas", ...new Set(states.map((item) => item.region))];
@@ -605,7 +610,7 @@ export function TerritorialPage() {
       <p className="page-subtitle">
         Consulte a disponibilidade por UF; observações nacionais não são atribuídas aos estados.
       </p>
-      <div className="card mt-7 grid gap-3 p-4 md:grid-cols-3">
+      <div className="card mt-7 grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-5">
         <Select
           label="Indicador"
           value={indicatorId}
@@ -613,13 +618,29 @@ export function TerritorialPage() {
           options={indicators.map((item) => ({ value: item.id, label: item.shortName }))}
         />
         <label>
-          <span className="field-label">Período</span>
-          <select className="field" disabled>
-            <option>Período definido pelas observações disponíveis</option>
-          </select>
+          <span className="field-label">Data inicial</span>
+          <input className="field" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+        </label>
+        <label>
+          <span className="field-label">Data final</span>
+          <input className="field" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
         </label>
         <Select label="Região" value={region} onChange={setRegion} options={regions} />
+        <Select
+          label="UF"
+          value={selectedLocality?.uf || ""}
+          onChange={(uf) => setSelected(states.find((item) => item.uf === uf)?.id)}
+          options={[
+            { value: "", label: "Selecione uma UF" },
+            ...states.map((item) => ({ value: item.uf, label: item.uf })),
+          ]}
+        />
       </div>
+      {startDate && endDate && startDate > endDate ? (
+        <p className="mt-3 text-xs text-rose-600" role="alert">
+          A data inicial não pode ser posterior à data final.
+        </p>
+      ) : null}
       <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
         <strong>Disponibilidade:</strong> os dados SGS carregados são nacionais. O catálogo não contém
         observações estaduais para esta série.

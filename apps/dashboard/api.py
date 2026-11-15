@@ -1,6 +1,6 @@
 from datetime import date
 
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
@@ -10,7 +10,29 @@ from localidades.models import Localidade
 
 
 def _observacoes_oficiais():
-    return ValorIndicador.objects.filter(metadados__simulado=False)
+    series_bcb = Q(pk__in=[])
+    for codigo, unidade in ((21084, '%'), (25462, '% a.m.'), (29265, '%')):
+        series_bcb |= Q(
+            indicador__codigo_fonte=f'SGS {codigo}',
+            metadados__codigo_sgs=codigo,
+            metadados__unidade_medida=unidade,
+            metadados__url_consulta__startswith=(
+                f'https://api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados'
+            ),
+            unidade_original=unidade,
+        )
+
+    return ValorIndicador.objects.filter(
+        fonte__nome='Sistema Gerenciador de Séries Temporais (SGS)',
+        fonte__instituicao='Banco Central do Brasil (BCB)',
+        fonte__url_origem='https://dadosabertos.bcb.gov.br/',
+        indicador__fonte_id=F('fonte_id'),
+        metadados__origem='Banco Central do Brasil — BCData/SGS',
+        metadados__url_fonte__startswith='https://dadosabertos.bcb.gov.br/dataset/',
+        metadados__abrangencia_geografica='Brasil',
+        localidade__tipo='Brasil',
+        localidade__codigo_ibge='00',
+    ).filter(series_bcb)
 
 
 def _erro(mensagem):
@@ -38,6 +60,13 @@ def _data_parametro(request, nome):
     if referencia.isoformat() != valor:
         raise ValueError(f'O filtro "{nome}" deve usar o formato AAAA-MM-DD.')
     return referencia
+
+
+def _uf_parametro(request):
+    valor = request.GET.get('uf', '').strip().upper()
+    if valor and (len(valor) != 2 or not all('A' <= letra <= 'Z' for letra in valor)):
+        raise ValueError('O filtro "uf" deve conter a sigla de uma UF com duas letras.')
+    return valor or None
 
 
 def _indicador_json(indicador):
@@ -171,6 +200,7 @@ def api_observacoes(request):
                 raise ValueError('O filtro "indicador" deve conter identificadores numéricos.') from exc
         fonte_id = _id_parametro(request, 'fonte')
         localidade_id = _id_parametro(request, 'localidade')
+        uf = _uf_parametro(request)
         data_inicio = _data_parametro(request, 'data_inicio')
         data_fim = _data_parametro(request, 'data_fim')
     except ValueError as exc:
@@ -188,6 +218,8 @@ def api_observacoes(request):
         observacoes = observacoes.filter(fonte_id=fonte_id)
     if localidade_id is not None:
         observacoes = observacoes.filter(localidade_id=localidade_id)
+    if uf is not None:
+        observacoes = observacoes.filter(localidade__uf=uf, localidade__tipo='Estado')
     if data_inicio:
         observacoes = observacoes.filter(periodo__data_referencia__gte=data_inicio)
     if data_fim:
