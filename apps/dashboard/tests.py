@@ -226,23 +226,100 @@ class PublicApiTests(TestCase):
         self.assertEqual(filtered.json()['count'], 0)
 
     def test_api_rejects_simulated_and_unverified_observations(self):
-        self.valor.metadados = {'simulado': True}
-        self.valor.save(update_fields=['metadados'])
-        response = self.client.get(reverse('api_observacoes'))
-        self.assertEqual(response.json()['count'], 0)
-
         self.valor.metadados = {'simulado': False}
         self.valor.save(update_fields=['metadados'])
         response = self.client.get(reverse('api_observacoes'))
         self.assertEqual(response.json()['count'], 0)
 
-    def test_uf_filter_does_not_assign_national_bcb_observations_to_states(self):
+    def test_national_bcb_observation_is_available_for_brazil_but_not_uf(self):
+        response = self.client.get(
+            reverse('api_observacoes'),
+            {'indicador': self.indicador.pk, 'localidade': self.brasil.pk},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['count'], 1)
+        self.assertEqual(response.json()['results'][0]['locality'], 'Brasil')
+
         response = self.client.get(reverse('api_observacoes'), {'uf': 'sp'})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['count'], 0)
 
         invalid = self.client.get(reverse('api_observacoes'), {'uf': 'São'})
         self.assertEqual(invalid.status_code, 400)
+
+    def test_approved_state_observation_is_limited_to_its_uf_and_period(self):
+        fonte = FonteDados.objects.create(
+            nome='Pesquisa Nacional por Amostra de Domicílios Contínua (PNAD Contínua)',
+            instituicao='Instituto Brasileiro de Geografia e Estatística (IBGE)',
+            tipo_origem='API',
+            url_origem='https://sidra.ibge.gov.br/',
+        )
+        indicador = Indicador.objects.create(
+            nome='Taxa de desocupação — PNAD Contínua',
+            categoria='emprego/desemprego',
+            unidade_medida='%',
+            periodicidade='trimestral',
+            codigo_fonte='PNAD Contínua',
+            abrangencia='Brasil e UFs, conforme a série oficial.',
+            fonte=fonte,
+        )
+        periodo = Periodo.objects.create(
+            ano=2024,
+            trimestre=1,
+            data_referencia='2024-03-31',
+        )
+        ValorIndicador.objects.create(
+            indicador=indicador,
+            fonte=fonte,
+            localidade=self.saopaulo,
+            periodo=periodo,
+            valor='7.500000',
+            unidade_original='%',
+            metadados={
+                'simulado': False,
+                'origem': 'IBGE/SIDRA',
+                'codigo_tabela': 'TESTE',
+                'codigo_variavel': 'TESTE',
+                'codigo_localidade': '35',
+                'url_fonte': 'https://sidra.ibge.gov.br/tabela/TESTE',
+                'url_consulta': 'https://apisidra.ibge.gov.br/values/t/TESTE',
+                'data_consulta': '2024-04-01T00:00:00+00:00',
+                'periodicidade': 'trimestral',
+                'unidade_medida': '%',
+                'abrangencia_geografica': 'Brasil e UFs',
+            },
+        )
+
+        url = reverse('api_observacoes')
+        filtros_validos = {
+            'indicador': indicador.pk,
+            'uf': 'SP',
+            'data_inicio': '2024-01-01',
+            'data_fim': '2024-03-31',
+        }
+        response = self.client.get(url, filtros_validos)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['count'], 1)
+        self.assertEqual(response.json()['results'][0]['uf'], 'SP')
+
+        response_outra_uf = self.client.get(url, {**filtros_validos, 'uf': 'RJ'})
+        self.assertEqual(response_outra_uf.json()['count'], 0)
+        response_outro_periodo = self.client.get(
+            url,
+            {**filtros_validos, 'data_fim': '2024-03-30'},
+        )
+        self.assertEqual(response_outro_periodo.json()['count'], 0)
+
+    def test_simulated_bcb_observation_is_excluded_despite_matching_provenance(self):
+        self.valor.metadados['simulado'] = True
+        self.valor.save(update_fields=['metadados'])
+
+        response = self.client.get(
+            reverse('api_observacoes'),
+            {'indicador': self.indicador.pk, 'localidade': self.brasil.pk},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['count'], 0)
 
     def test_api_rejects_invalid_date_range(self):
         invalid = self.client.get(

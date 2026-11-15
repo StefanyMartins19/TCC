@@ -92,7 +92,7 @@ Filtros de observações: `indicador` (repetível), `fonte`, `localidade`, `uf` 
 /api/observacoes/?indicador=1&fonte=1&uf=SP&data_inicio=2024-01-01&data_fim=2025-12-31
 ```
 
-O catálogo também aceita `q`, `categoria`, `fonte` e `periodicidade`. A API só apresenta as séries BCB SGS atualmente importadas quando fonte, indicador, unidade, URLs de origem/consulta e abrangência nacional correspondem ao contrato do importador. `simulado=False`, isoladamente, não comprova autenticidade. Séries BCB continuam vinculadas à localidade Brasil; não são projetadas para UFs. A base OBI do PR externo não é importada porque sua procedência e conexão não podem ser verificadas neste repositório.
+O catálogo também aceita `q`, `categoria`, `fonte` e `periodicidade`. A API exclui explicitamente observações com `simulado=True` e só apresenta séries BCB nacionais quando fonte, indicador, unidade e URLs correspondem ao contrato do importador. Para recortes estaduais, aceita apenas as séries PNAD Contínua explicitamente aprovadas, com fonte IBGE/SIDRA e metadados de tabela, variável, localidade, unidade, período e consulta; atualmente nenhuma observação estadual foi carregada. `simulado=False`, isoladamente, não comprova autenticidade. Séries BCB continuam vinculadas à localidade Brasil; não são projetadas para UFs. A base OBI do PR externo não é importada porque sua procedência e conexão não podem ser verificadas neste repositório.
 
 ## Testes e build
 

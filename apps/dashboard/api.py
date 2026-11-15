@@ -22,7 +22,39 @@ def _observacoes_oficiais():
             unidade_original=unidade,
         )
 
-    return ValorIndicador.objects.filter(
+    series_pnad_estaduais = Q(pk__in=[])
+    for indicador, unidade in (
+        ('Taxa de desocupação — PNAD Contínua', '%'),
+        ('Rendimento médio do trabalho — PNAD Contínua', 'R$'),
+    ):
+        series_pnad_estaduais |= Q(
+            fonte__nome='Pesquisa Nacional por Amostra de Domicílios Contínua (PNAD Contínua)',
+            fonte__instituicao='Instituto Brasileiro de Geografia e Estatística (IBGE)',
+            fonte__url_origem='https://sidra.ibge.gov.br/',
+            fonte__ativo=True,
+            indicador__fonte_id=F('fonte_id'),
+            indicador__nome=indicador,
+            indicador__codigo_fonte='PNAD Contínua',
+            indicador__periodicidade='trimestral',
+            indicador__unidade_medida=unidade,
+            indicador__ativo=True,
+            unidade_original=unidade,
+            metadados__origem='IBGE/SIDRA',
+            metadados__url_fonte__startswith='https://sidra.ibge.gov.br/tabela/',
+            metadados__url_consulta__startswith='https://apisidra.ibge.gov.br/values/t/',
+            metadados__codigo_tabela__isnull=False,
+            metadados__codigo_variavel__isnull=False,
+            metadados__codigo_localidade=F('localidade__codigo_ibge'),
+            metadados__data_consulta__isnull=False,
+            metadados__unidade_medida=unidade,
+            metadados__periodicidade='trimestral',
+            metadados__abrangencia_geografica='Brasil e UFs',
+            localidade__tipo='Estado',
+            localidade__pais='Brasil',
+            localidade__uf__gt='',
+        )
+
+    serie_bcb_nacional = Q(
         fonte__nome='Sistema Gerenciador de Séries Temporais (SGS)',
         fonte__instituicao='Banco Central do Brasil (BCB)',
         fonte__url_origem='https://dadosabertos.bcb.gov.br/',
@@ -32,7 +64,10 @@ def _observacoes_oficiais():
         metadados__abrangencia_geografica='Brasil',
         localidade__tipo='Brasil',
         localidade__codigo_ibge='00',
-    ).filter(series_bcb)
+    )
+    return ValorIndicador.objects.filter(metadados__simulado=False).filter(
+        (serie_bcb_nacional & series_bcb) | series_pnad_estaduais
+    )
 
 
 def _erro(mensagem):
