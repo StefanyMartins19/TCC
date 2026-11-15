@@ -6,9 +6,11 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.db.backends.postgresql.base import DatabaseWrapper
 from django.test import TestCase
 from django.urls import reverse
 
+from dashboard.api import _observacoes_oficiais
 from fontes.models import FonteDados
 from indicadores.models import Indicador, Periodo, ValorIndicador
 from localidades.models import Localidade
@@ -247,6 +249,122 @@ class PublicApiTests(TestCase):
         invalid = self.client.get(reverse('api_observacoes'), {'uf': 'São'})
         self.assertEqual(invalid.status_code, 400)
 
+    def test_all_public_endpoints_include_only_verified_national_bcb_series(self):
+        for codigo, unidade in ((25462, '% a.m.'), (29265, '%')):
+            indicador = Indicador.objects.create(
+                nome=f'Série BCB SGS {codigo}',
+                categoria='inadimplência',
+                unidade_medida=unidade,
+                periodicidade='mensal',
+                codigo_fonte=f'SGS {codigo}',
+                abrangencia='Brasil',
+                fonte=self.fonte,
+            )
+            ValorIndicador.objects.create(
+                indicador=indicador,
+                fonte=self.fonte,
+                localidade=self.brasil,
+                periodo=self.periodo,
+                valor='1.250000',
+                unidade_original=unidade,
+                metadados={
+                    'simulado': False,
+                    'origem': 'Banco Central do Brasil — BCData/SGS',
+                    'codigo_sgs': codigo,
+                    'url_fonte': f'https://dadosabertos.bcb.gov.br/dataset/{codigo}',
+                    'url_consulta': (
+                        f'https://api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados'
+                        '?formato=json'
+                    ),
+                    'unidade_medida': unidade,
+                    'abrangencia_geografica': 'Brasil',
+                },
+            )
+
+        periodo_simulado = Periodo.objects.create(
+            ano=2024,
+            mes=3,
+            data_referencia='2024-03-01',
+        )
+        serie_bcb_25462 = ValorIndicador.objects.get(indicador__codigo_fonte='SGS 25462')
+        metadados_simulados = serie_bcb_25462.metadados.copy()
+        metadados_simulados['simulado'] = True
+        ValorIndicador.objects.create(
+            indicador=serie_bcb_25462.indicador,
+            fonte=self.fonte,
+            localidade=self.brasil,
+            periodo=periodo_simulado,
+            valor='99.000000',
+            unidade_original=serie_bcb_25462.unidade_original,
+            metadados=metadados_simulados,
+        )
+
+        responses = {
+            'indicadores': self.client.get(reverse('api_indicadores')),
+            'localidades': self.client.get(reverse('api_localidades')),
+            'fontes': self.client.get(reverse('api_fontes')),
+            'observacoes': self.client.get(reverse('api_observacoes')),
+        }
+        for nome, response in responses.items():
+            with self.subTest(endpoint=nome):
+                self.assertEqual(response.status_code, 200)
+
+        indicadores = responses['indicadores'].json()['results']
+        self.assertEqual(
+            {item['code'] for item in indicadores if item['observation_count']},
+            {'SGS 21084', 'SGS 25462', 'SGS 29265'},
+        )
+        fonte = responses['fontes'].json()['results'][0]
+        self.assertEqual(fonte['observation_count'], 3)
+        brasil = next(
+            item
+            for item in responses['localidades'].json()['results']
+            if item['type'] == 'Brasil'
+        )
+        self.assertEqual(brasil['observation_count'], 3)
+        observacoes = responses['observacoes'].json()
+        self.assertEqual(observacoes['count'], 3)
+        self.assertEqual(
+            {item['code'] for item in observacoes['results']},
+            {'SGS 21084', 'SGS 25462', 'SGS 29265'},
+        )
+        sem_correspondencias = self.client.get(
+            reverse('api_observacoes'),
+            {'indicador': 999999},
+        )
+        self.assertEqual(sem_correspondencias.status_code, 200)
+        self.assertEqual(sem_correspondencias.json()['count'], 0)
+
+    def test_official_observation_query_compiles_json_locality_as_postgresql_text(self):
+        connection = DatabaseWrapper(
+            {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': 'copilot_json_api_test_only',
+                'USER': 'test_only',
+                'PASSWORD': 'test_only',
+                'HOST': '127.0.0.1',
+                'PORT': '1',
+                'OPTIONS': {},
+                'TIME_ZONE': None,
+                'CONN_MAX_AGE': 0,
+                'CONN_HEALTH_CHECKS': False,
+                'AUTOCOMMIT': True,
+                'ATOMIC_REQUESTS': False,
+            },
+            alias='disposable_sql_compile_only',
+        )
+        try:
+            sql, _ = _observacoes_oficiais().query.get_compiler(
+                connection=connection,
+            ).as_sql()
+        finally:
+            connection.close()
+
+        self.assertIn(
+            '"metadados" ->> %s) = ("localidades_localidade"."codigo_ibge")',
+            sql,
+        )
+
     def test_approved_state_observation_is_limited_to_its_uf_and_period(self):
         fonte = FonteDados.objects.create(
             nome='Pesquisa Nacional por Amostra de Domicílios Contínua (PNAD Contínua)',
@@ -280,7 +398,7 @@ class PublicApiTests(TestCase):
                 'origem': 'IBGE/SIDRA',
                 'codigo_tabela': 'TESTE',
                 'codigo_variavel': 'TESTE',
-                'codigo_localidade': '35',
+                'codigo_localidade': 35,
                 'url_fonte': 'https://sidra.ibge.gov.br/tabela/TESTE',
                 'url_consulta': 'https://apisidra.ibge.gov.br/values/t/TESTE',
                 'data_consulta': '2024-04-01T00:00:00+00:00',
