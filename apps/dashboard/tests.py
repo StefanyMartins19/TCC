@@ -141,32 +141,55 @@ class DashboardViewsTests(TestCase):
 class PublicApiTests(TestCase):
     def setUp(self):
         self.fonte = FonteDados.objects.create(
-            nome='Fonte pública',
-            instituicao='Instituição pública',
+            nome='Sistema Gerenciador de Séries Temporais (SGS)',
+            instituicao='Banco Central do Brasil (BCB)',
             tipo_origem='API',
-            url_origem='https://example.com',
+            url_origem='https://dadosabertos.bcb.gov.br/',
         )
         self.indicador = Indicador.objects.create(
-            nome='Indicador de teste',
-            nome_curto='Teste',
-            descricao='Série oficial de teste.',
-            categoria='renda',
-            unidade_medida='R$',
+            nome='Inadimplência da carteira de crédito de pessoas físicas — BCB SGS 21084',
+            nome_curto='Inadimplência PF',
+            descricao='Série oficial do BCB.',
+            categoria='inadimplência',
+            unidade_medida='%',
             periodicidade='mensal',
-            codigo_fonte='Teste 1',
+            codigo_fonte='SGS 21084',
             abrangencia='Brasil',
             fonte=self.fonte,
         )
         self.brasil = Localidade.objects.create(codigo_ibge='00', nome='Brasil', tipo='Brasil')
+        self.saopaulo = Localidade.objects.create(
+            codigo_ibge='35',
+            nome='São Paulo',
+            tipo='Estado',
+            uf='SP',
+        )
         self.periodo = Periodo.objects.create(ano=2024, mes=2, data_referencia='2024-02-01')
         self.valor = ValorIndicador.objects.create(
             indicador=self.indicador,
             fonte=self.fonte,
             localidade=self.brasil,
             periodo=self.periodo,
-            valor='1234.560000',
-            unidade_original='R$',
-            metadados={'simulado': False, 'codigo_externo': 'Teste 1'},
+            valor='8.500000',
+            unidade_original='%',
+            metadados={
+                'simulado': False,
+                'origem': 'Banco Central do Brasil — BCData/SGS',
+                'codigo_sgs': 21084,
+                'url_fonte': (
+                    'https://dadosabertos.bcb.gov.br/dataset/'
+                    '21084-inadimplencia-da-carteira-de-credito---pessoas-fisicas---total'
+                ),
+                'url_consulta': (
+                    'https://api.bcb.gov.br/dados/serie/bcdata.sgs.21084/dados'
+                    '?formato=json&dataInicial=01%2F02%2F2024&dataFinal=29%2F02%2F2024'
+                ),
+                'data_consulta': '2024-03-01T00:00:00+00:00',
+                'data_referencia': '2024-02-01',
+                'periodicidade': 'mensal',
+                'unidade_medida': '%',
+                'abrangencia_geografica': 'Brasil',
+            },
         )
 
     def test_indicator_catalog_exposes_metadata_and_latest_official_value(self):
@@ -174,9 +197,9 @@ class PublicApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         item = response.json()['results'][0]
-        self.assertEqual(item['code'], 'Teste 1')
-        self.assertEqual(item['source']['institution'], 'Instituição pública')
-        self.assertEqual(item['latest'], {'value': '1234.560000', 'date': '2024-02-01'})
+        self.assertEqual(item['code'], 'SGS 21084')
+        self.assertEqual(item['source']['institution'], 'Banco Central do Brasil (BCB)')
+        self.assertEqual(item['latest'], {'value': '8.500000', 'date': '2024-02-01'})
         self.assertEqual(item['observation_count'], 1)
 
     def test_observations_support_combined_indicator_source_locality_and_date_filters(self):
@@ -195,19 +218,110 @@ class PublicApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['count'], 1)
         row = response.json()['results'][0]
-        self.assertEqual(row['value'], '1234.560000')
+        self.assertEqual(row['value'], '8.500000')
         self.assertEqual(row['locality'], 'Brasil')
-        self.assertEqual(row['metadata']['codigo_externo'], 'Teste 1')
+        self.assertEqual(row['metadata']['codigo_sgs'], 21084)
 
         filtered = self.client.get(url, {'data_inicio': '2024-03-01'})
         self.assertEqual(filtered.json()['count'], 0)
 
-    def test_api_excludes_simulated_observations_and_rejects_invalid_date_range(self):
-        self.valor.metadados = {'simulado': True}
+    def test_api_rejects_simulated_and_unverified_observations(self):
+        self.valor.metadados = {'simulado': False}
         self.valor.save(update_fields=['metadados'])
         response = self.client.get(reverse('api_observacoes'))
         self.assertEqual(response.json()['count'], 0)
 
+    def test_national_bcb_observation_is_available_for_brazil_but_not_uf(self):
+        response = self.client.get(
+            reverse('api_observacoes'),
+            {'indicador': self.indicador.pk, 'localidade': self.brasil.pk},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['count'], 1)
+        self.assertEqual(response.json()['results'][0]['locality'], 'Brasil')
+
+        response = self.client.get(reverse('api_observacoes'), {'uf': 'sp'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['count'], 0)
+
+        invalid = self.client.get(reverse('api_observacoes'), {'uf': 'São'})
+        self.assertEqual(invalid.status_code, 400)
+
+    def test_approved_state_observation_is_limited_to_its_uf_and_period(self):
+        fonte = FonteDados.objects.create(
+            nome='Pesquisa Nacional por Amostra de Domicílios Contínua (PNAD Contínua)',
+            instituicao='Instituto Brasileiro de Geografia e Estatística (IBGE)',
+            tipo_origem='API',
+            url_origem='https://sidra.ibge.gov.br/',
+        )
+        indicador = Indicador.objects.create(
+            nome='Taxa de desocupação — PNAD Contínua',
+            categoria='emprego/desemprego',
+            unidade_medida='%',
+            periodicidade='trimestral',
+            codigo_fonte='PNAD Contínua',
+            abrangencia='Brasil e UFs, conforme a série oficial.',
+            fonte=fonte,
+        )
+        periodo = Periodo.objects.create(
+            ano=2024,
+            trimestre=1,
+            data_referencia='2024-03-31',
+        )
+        ValorIndicador.objects.create(
+            indicador=indicador,
+            fonte=fonte,
+            localidade=self.saopaulo,
+            periodo=periodo,
+            valor='7.500000',
+            unidade_original='%',
+            metadados={
+                'simulado': False,
+                'origem': 'IBGE/SIDRA',
+                'codigo_tabela': 'TESTE',
+                'codigo_variavel': 'TESTE',
+                'codigo_localidade': '35',
+                'url_fonte': 'https://sidra.ibge.gov.br/tabela/TESTE',
+                'url_consulta': 'https://apisidra.ibge.gov.br/values/t/TESTE',
+                'data_consulta': '2024-04-01T00:00:00+00:00',
+                'periodicidade': 'trimestral',
+                'unidade_medida': '%',
+                'abrangencia_geografica': 'Brasil e UFs',
+            },
+        )
+
+        url = reverse('api_observacoes')
+        filtros_validos = {
+            'indicador': indicador.pk,
+            'uf': 'SP',
+            'data_inicio': '2024-01-01',
+            'data_fim': '2024-03-31',
+        }
+        response = self.client.get(url, filtros_validos)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['count'], 1)
+        self.assertEqual(response.json()['results'][0]['uf'], 'SP')
+
+        response_outra_uf = self.client.get(url, {**filtros_validos, 'uf': 'RJ'})
+        self.assertEqual(response_outra_uf.json()['count'], 0)
+        response_outro_periodo = self.client.get(
+            url,
+            {**filtros_validos, 'data_fim': '2024-03-30'},
+        )
+        self.assertEqual(response_outro_periodo.json()['count'], 0)
+
+    def test_simulated_bcb_observation_is_excluded_despite_matching_provenance(self):
+        self.valor.metadados['simulado'] = True
+        self.valor.save(update_fields=['metadados'])
+
+        response = self.client.get(
+            reverse('api_observacoes'),
+            {'indicador': self.indicador.pk, 'localidade': self.brasil.pk},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['count'], 0)
+
+    def test_api_rejects_invalid_date_range(self):
         invalid = self.client.get(
             reverse('api_observacoes'),
             {'data_inicio': '2024-03-01', 'data_fim': '2024-02-01'},

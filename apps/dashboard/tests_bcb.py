@@ -77,6 +77,17 @@ class BcbImportTests(TestCase):
         self.assertEqual(valor.metadados['codigo_sgs'], 21084)
         self.assertEqual(valor.unidade_original, '%')
         self.assertEqual(ImportacaoDados.objects.filter(status='CONCLUIDO').count(), 6)
+        response = self.client.get(
+            '/api/observacoes/',
+            {'indicador': indicador.pk, 'uf': 'SP', 'data_inicio': '2024-01-01'},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['count'], 0)
+        response = self.client.get('/api/observacoes/')
+        self.assertEqual(response.json()['count'], 3)
+        self.assertTrue(
+            all(item['locality'] == 'Brasil' for item in response.json()['results'])
+        )
 
     @patch('dashboard.management.commands.importar_dados_bcb.urlopen')
     def test_failed_series_are_recorded_and_reported_without_success_status(self, urlopen):

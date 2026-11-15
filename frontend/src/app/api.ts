@@ -92,6 +92,7 @@ export type ObservationFilters = {
   indicatorIds?: string[];
   sourceId?: string;
   localityId?: string;
+  uf?: string;
   startDate?: string;
   endDate?: string;
 };
@@ -178,6 +179,7 @@ export async function fetchObservations(filters: ObservationFilters = {}) {
   filters.indicatorIds?.forEach((id) => query.append("indicador", id));
   if (filters.sourceId) query.set("fonte", filters.sourceId);
   if (filters.localityId) query.set("localidade", filters.localityId);
+  if (filters.uf) query.set("uf", filters.uf);
   if (filters.startDate) query.set("data_inicio", filters.startDate);
   if (filters.endDate) query.set("data_fim", filters.endDate);
   const queryString = query.toString();

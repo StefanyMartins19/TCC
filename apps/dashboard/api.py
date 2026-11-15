@@ -1,6 +1,6 @@
 from datetime import date
 
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
@@ -10,7 +10,64 @@ from localidades.models import Localidade
 
 
 def _observacoes_oficiais():
-    return ValorIndicador.objects.filter(metadados__simulado=False)
+    series_bcb = Q(pk__in=[])
+    for codigo, unidade in ((21084, '%'), (25462, '% a.m.'), (29265, '%')):
+        series_bcb |= Q(
+            indicador__codigo_fonte=f'SGS {codigo}',
+            metadados__codigo_sgs=codigo,
+            metadados__unidade_medida=unidade,
+            metadados__url_consulta__startswith=(
+                f'https://api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados'
+            ),
+            unidade_original=unidade,
+        )
+
+    series_pnad_estaduais = Q(pk__in=[])
+    for indicador, unidade in (
+        ('Taxa de desocupação — PNAD Contínua', '%'),
+        ('Rendimento médio do trabalho — PNAD Contínua', 'R$'),
+    ):
+        series_pnad_estaduais |= Q(
+            fonte__nome='Pesquisa Nacional por Amostra de Domicílios Contínua (PNAD Contínua)',
+            fonte__instituicao='Instituto Brasileiro de Geografia e Estatística (IBGE)',
+            fonte__url_origem='https://sidra.ibge.gov.br/',
+            fonte__ativo=True,
+            indicador__fonte_id=F('fonte_id'),
+            indicador__nome=indicador,
+            indicador__codigo_fonte='PNAD Contínua',
+            indicador__periodicidade='trimestral',
+            indicador__unidade_medida=unidade,
+            indicador__ativo=True,
+            unidade_original=unidade,
+            metadados__origem='IBGE/SIDRA',
+            metadados__url_fonte__startswith='https://sidra.ibge.gov.br/tabela/',
+            metadados__url_consulta__startswith='https://apisidra.ibge.gov.br/values/t/',
+            metadados__codigo_tabela__isnull=False,
+            metadados__codigo_variavel__isnull=False,
+            metadados__codigo_localidade=F('localidade__codigo_ibge'),
+            metadados__data_consulta__isnull=False,
+            metadados__unidade_medida=unidade,
+            metadados__periodicidade='trimestral',
+            metadados__abrangencia_geografica='Brasil e UFs',
+            localidade__tipo='Estado',
+            localidade__pais='Brasil',
+            localidade__uf__gt='',
+        )
+
+    serie_bcb_nacional = Q(
+        fonte__nome='Sistema Gerenciador de Séries Temporais (SGS)',
+        fonte__instituicao='Banco Central do Brasil (BCB)',
+        fonte__url_origem='https://dadosabertos.bcb.gov.br/',
+        indicador__fonte_id=F('fonte_id'),
+        metadados__origem='Banco Central do Brasil — BCData/SGS',
+        metadados__url_fonte__startswith='https://dadosabertos.bcb.gov.br/dataset/',
+        metadados__abrangencia_geografica='Brasil',
+        localidade__tipo='Brasil',
+        localidade__codigo_ibge='00',
+    )
+    return ValorIndicador.objects.filter(metadados__simulado=False).filter(
+        (serie_bcb_nacional & series_bcb) | series_pnad_estaduais
+    )
 
 
 def _erro(mensagem):
@@ -38,6 +95,13 @@ def _data_parametro(request, nome):
     if referencia.isoformat() != valor:
         raise ValueError(f'O filtro "{nome}" deve usar o formato AAAA-MM-DD.')
     return referencia
+
+
+def _uf_parametro(request):
+    valor = request.GET.get('uf', '').strip().upper()
+    if valor and (len(valor) != 2 or not all('A' <= letra <= 'Z' for letra in valor)):
+        raise ValueError('O filtro "uf" deve conter a sigla de uma UF com duas letras.')
+    return valor or None
 
 
 def _indicador_json(indicador):
@@ -171,6 +235,7 @@ def api_observacoes(request):
                 raise ValueError('O filtro "indicador" deve conter identificadores numéricos.') from exc
         fonte_id = _id_parametro(request, 'fonte')
         localidade_id = _id_parametro(request, 'localidade')
+        uf = _uf_parametro(request)
         data_inicio = _data_parametro(request, 'data_inicio')
         data_fim = _data_parametro(request, 'data_fim')
     except ValueError as exc:
@@ -188,6 +253,8 @@ def api_observacoes(request):
         observacoes = observacoes.filter(fonte_id=fonte_id)
     if localidade_id is not None:
         observacoes = observacoes.filter(localidade_id=localidade_id)
+    if uf is not None:
+        observacoes = observacoes.filter(localidade__uf=uf, localidade__tipo='Estado')
     if data_inicio:
         observacoes = observacoes.filter(periodo__data_referencia__gte=data_inicio)
     if data_fim:
