@@ -651,25 +651,29 @@ export function BrazilMap({
 }) {
   const states = localities.filter((item) => item.type === "Estado" && item.uf);
   return (
-    <div className="relative h-[390px] overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 to-slate-50 dark:from-blue-950/30 dark:to-slate-900">
-      <div className="absolute left-[9%] top-[8%] h-[82%] w-[82%] rounded-[45%_40%_45%_50%] border border-blue-200/60 bg-white/70 shadow-inner [clip-path:polygon(9%_18%,36%_2%,59%_14%,86%_24%,95%_46%,76%_56%,70%_77%,53%_100%,40%_85%,31%_69%,10%_58%,0_35%)] dark:bg-slate-800/60" />
-      {states.map((item) => (
-        <button
-          key={item.id}
-          onClick={() => onSelect?.(item.id)}
-          className={`absolute z-10 grid h-8 w-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border text-[9px] font-bold shadow-sm transition hover:z-20 hover:scale-125 ${mapPositions[item.uf]} ${selected === item.id ? "border-blue-700 bg-blue-600 text-white ring-4 ring-blue-200" : "border-white bg-slate-100 text-slate-600 hover:bg-blue-600 hover:text-white"}`}
-          title={`${item.name} · ${item.has_data ? "com observações oficiais" : "sem observações oficiais"}`}
-          aria-label={`${item.name}, ${item.has_data ? "com" : "sem"} observações oficiais`}
-        >
-          {item.uf}
-        </button>
-      ))}
-      <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between rounded-xl border border-white/80 bg-white/90 p-3 text-[11px] shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/90">
-        <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-          <Info size={14} className="text-blue-600" />
-          {states.some((item) => item.has_data)
-            ? "Selecione uma UF para consultar observações oficiais."
-            : "Nenhuma observação estadual disponível; séries nacionais não são replicadas."}
+    <div className="space-y-3">
+      <div className="relative h-[390px] overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 to-slate-50 dark:from-blue-950/30 dark:to-slate-900">
+        <div className="absolute left-[9%] top-[8%] h-[82%] w-[82%] rounded-[45%_40%_45%_50%] border border-blue-200/60 bg-white/70 shadow-inner [clip-path:polygon(9%_18%,36%_2%,59%_14%,86%_24%,95%_46%,76%_56%,70%_77%,53%_100%,40%_85%,31%_69%,10%_58%,0_35%)] dark:bg-slate-800/60" />
+        {states.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => onSelect?.(item.id)}
+            className={`absolute z-10 grid h-8 w-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border text-[9px] font-bold shadow-sm transition hover:z-20 hover:scale-125 ${mapPositions[item.uf]} ${selected === item.id ? "border-blue-700 bg-blue-600 text-white ring-4 ring-blue-200" : "border-white bg-slate-100 text-slate-600 hover:bg-blue-600 hover:text-white"}`}
+            title={`${item.name} · ${item.has_data ? "com observações oficiais" : "sem observações oficiais"}`}
+            aria-label={`${item.name}, ${item.has_data ? "com" : "sem"} observações oficiais`}
+          >
+            {item.uf}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-col gap-2 rounded-xl border border-white/80 bg-white/90 p-3 text-[11px] shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between dark:border-white/10 dark:bg-slate-900/90">
+        <span className="flex min-w-0 items-start gap-2 text-slate-600 dark:text-slate-300">
+          <Info size={14} className="mt-0.5 shrink-0 text-blue-600" />
+          <span>
+            {states.some((item) => item.has_data)
+              ? "Selecione uma UF para consultar observações oficiais."
+              : "Nenhuma observação estadual disponível; séries nacionais não são replicadas."}
+          </span>
         </span>
         <DemoBadge official={states.some((item) => item.has_data)} />
       </div>
